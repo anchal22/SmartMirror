@@ -32,6 +32,22 @@ large_text_size = 28
 medium_text_size = 18
 small_text_size = 10
 
+window_width = 540
+window_height = 960
+window_x = 400
+window_y =150
+dynamic_frame_w = 600
+dynamic_frame_h = 400
+ip = '<IP>'
+ui_locale = '' # '' as default
+news_country_code = 'us'
+weather_api_token = 'e4aaf1c42f8fbf5216885bf1133c1202'
+weather_lang = 'en'
+weather_unit = 'us'
+latitude = None
+longitude = None
+
+
 # set font
 font1 = QFont('Helvetica', small_text_size)
 font2 = QFont('Helvetica', medium_text_size)
@@ -53,6 +69,171 @@ def setlocale(name): #thread proof function to work with locale
 
 
 
+
+icon_lookup = {
+    'clear-day': "assets/Sun.png",  # clear sky day
+    'wind': "assets/Wind.png",   #wind
+    'cloudy': "assets/Cloud.png",  # cloudy day
+    'partly-cloudy-day': "assets/PartlySunny.png",  # partly cloudy day
+    'rain': "assets/Rain.png",  # rain day
+    'snow': "assets/Snow.png",  # snow day
+    'snow-thin': "assets/Snow.png",  # sleet day
+    'fog': "assets/Haze.png",  # fog day
+    'clear-night': "assets/Moon.png",  # clear sky night
+    'partly-cloudy-night': "assets/PartlyMoon.png",  # scattered clouds night
+    'thunderstorm': "assets/Storm.png",  # thunderstorm
+    'tornado': "assests/Tornado.png",    # tornado
+    'hail': "assests/Hail.png"  # hail
+}
+
+# class weather
+class Weather(QWidget):
+    def __init__(self, parent, *args, **kwargs):
+        super(Weather, self).__init__()
+        self.initUI()
+
+    def initUI(self):
+        font1 = QFont('Helvetica', small_text_size)
+        font2 = QFont('Helvetica', medium_text_size)
+        font3 = QFont('Helvetica', large_text_size)
+
+        self.temperature = ''
+        self.forecast = ''
+        self.location = ''
+        self.currently = ''
+        self.icon = ''
+
+        self.vbox= QVBoxLayout()
+        self.temperatureLbl  = QLabel('Tepr')
+        self.iconLbl = QLabel()
+        self.currentlyLbl = QLabel('currently')
+        self.forecastLbl = QLabel('forecast')
+        self.locationLbl = QLabel('location')
+
+        self.temperatureLbl.setFont(font3)
+        self.currentlyLbl.setFont(font2)
+        self.forecastLbl.setFont(font1)
+        self.locationLbl.setFont(font1)
+
+        self.hbox = QHBoxLayout()
+        self.vbox = QVBoxLayout()
+        self.vbox1 = QVBoxLayout()
+        self.hbox.addWidget(self.temperatureLbl)
+        self.hbox.addWidget(self.iconLbl)
+        self.hbox.setAlignment(Qt.AlignLeft)
+        self.vbox1.addWidget(self.currentlyLbl)
+        self.vbox1.addWidget(self.forecastLbl)
+        self.vbox1.addWidget(self.locationLbl)
+        self.vbox1.addStretch(1)
+
+        self.vbox.addLayout(self.hbox)
+        self.vbox.addLayout(self.vbox1)
+        self.vbox.setContentsMargins(0,0,0,0)
+        self.setLayout(self.vbox)
+        self.get_weather()
+        self.weather_update()
+
+
+    def weather_update(self):
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.get_weather)
+        self.timer.start(60000*60)
+
+
+
+    def get_ip(self):
+        try:
+            ip_url = "http://jsonip.com/"
+            req = requests.get(ip_url)
+            ip_json = json.loads(req.text)
+            return ip_json['ip']
+        except Exception as e:
+            traceback.print_exc()
+            return "Error: %s. Cannot get ip." % e
+
+    def get_weather(self):
+        try:
+            print 'Getting weather ......'
+            if latitude is None and longitude is None:
+                # get location
+                location_req_url = "http://freegeoip.net/json/%s" % self.get_ip()
+                r = requests.get(location_req_url)
+                location_obj = json.loads(r.text)
+
+                lat = location_obj['latitude']
+                lon = location_obj['longitude']
+
+                location2 = "%s, %s" % (location_obj['city'], location_obj['region_code'])
+
+                # get weather
+                weather_req_url = "https://api.darksky.net/forecast/%s/%s,%s?lang=%s&units=%s" % (weather_api_token, lat,lon,weather_lang,weather_unit)
+            else:
+                location2 = ""
+                # get weather
+                weather_req_url = "https://api.darksky.net/forecast/%s/%s,%s?lang=%s&units=%s" % (weather_api_token, latitude, longitude, weather_lang, weather_unit)
+
+            r = requests.get(weather_req_url)
+            weather_obj = json.loads(r.text)
+
+            degree_sign= u'\N{DEGREE SIGN}'
+            f = int(weather_obj['currently']['temperature'])
+            c = int(5*(f-32)/9)
+            temperature2 = "%s%s" % (str(c), degree_sign)
+            currently2 = weather_obj['currently']['summary']
+            forecast2 = weather_obj["hourly"]["summary"]
+
+            icon_id = weather_obj['currently']['icon']
+            icon2 = None
+
+            if icon_id in icon_lookup:
+                icon2 = icon_lookup[icon_id]
+
+            if icon2 is not None:
+                if self.icon != icon2:
+                    self.icon = icon2
+                    image = cv2.imread(icon2, cv2.IMREAD_COLOR);
+                    image = cv2.resize(image,(50,50), interpolation = cv2.INTER_CUBIC)
+                    image = QImage(image, image.shape[1], image.shape[0], 
+                       image.strides[0], QImage.Format_RGB888)
+        
+                    #pix = pil2qpixmap(image)
+
+                    self.iconLbl.setPixmap(QPixmap.fromImage(image))
+            else:
+                # remove image
+                self.iconLbl.setPixmap(QPixmap(''))
+                a=1
+
+            if self.currently != currently2:
+                print self.currently
+                self.currently = currently2
+                self.currentlyLbl.setText(currently2)
+            if self.forecast != forecast2:
+                self.forecast = forecast2
+                self.forecastLbl.setText(forecast2)
+            if self.temperature != temperature2:
+                self.temperature = temperature2
+                self.temperatureLbl.setText(temperature2)
+            if self.location != location2:
+                if location2 == ", ":
+                    self.location = "Cannot Pinpoint Location"
+                    self.locationLbl.setText("Cannot Pinpoint Location")
+                else:
+                    self.location = location2
+                    self.locationLbl.setText(location2)
+        except Exception as e:
+            traceback.print_exc()
+            print "Error: %s. Cannot get weather." % e
+
+
+    @staticmethod
+    def convert_kelvin_to_fahrenheit(kelvin_temp):
+        return 1.8 * (kelvin_temp - 273) + 32
+
+
+
+
+		
 # class calendar
 class Calendar(QWidget):
     """docstring fss Calendar"""
@@ -148,15 +329,14 @@ class News(QWidget):
 
     #updating news
     def news_fetcher(self):
-        
+
         try:
             
-            news_req_url = "'https://newsapi.org/v2/top-headlines?''country=us&''apiKey=76d13e64c224446982e92a6e4ba09167'"
+            news_req_url = "https://newsapi.org/v2/top-headlines?country=us&apiKey=76d13e64c224446982e92a6e4ba09167" 
             # print news_req_url
             r = requests.get(news_req_url)
-            print r.json
-
             news_obj = json.loads(r.text)
+            print news_obj
             
             # print news_obj
             
@@ -175,14 +355,14 @@ class News(QWidget):
                 
             for (i,x) in enumerate(data_read):
                 #INDIA
-                image = cv2.imread("assets/Newspaper.png", cv2.CV_LOAD_IMAGE_COLOR);
+                image = cv2.imread("assets/Newspaper.png", cv2.IMREAD_COLOR);
                 image = cv2.resize(image,(25,25), interpolation = cv2.INTER_CUBIC)
                 image = QImage(image, image.shape[1], image.shape[0], 
                        image.strides[0], QImage.Format_RGB888)
                 newspaperIcon = QLabel()
                 newspaperIcon.setPixmap(QPixmap.fromImage(image))
 
-                if self.source == 'the-times-of-india':
+                if self.source == 'The New York Times':
                     lbl = QLabel(x)
                     lbl.setWordWrap(True)
                     lbl.setFont(font1)
@@ -220,6 +400,7 @@ class News(QWidget):
 
         except IOError:
             print('no internet')
+        
 
 
 
@@ -316,9 +497,22 @@ class SmartMirrorWindow:
         self.qt.quotes = Quotes(QWidget())
         self.qt.hbox2.addWidget(self.qt.quotes)
 
+        # for weather
+        
+        self.qt.hbox3 = QHBoxLayout()
+        self.qt.weather = Weather(QWidget())
+       
+        self.qt.hbox3.addWidget(self.qt.weather)
+
+
         self.qt.vbox = QVBoxLayout()
         self.qt.vbox.addLayout(self.qt.hbox1)
         self.qt.vbox.addLayout(self.qt.hbox2)
+        self.qt.vbox.addLayout(self.qt.hbox3)
+        
+
+        
+
 
         self.qt.setLayout(self.qt.vbox)
         
