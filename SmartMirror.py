@@ -21,6 +21,9 @@ from contextlib import contextmanager
 from forismatic import Forismatic
 
 
+import pyaudio
+import speech_recognition as sr
+
 #global declaration of variables
 
 ui_locale = ''
@@ -47,11 +50,19 @@ weather_unit = 'us'
 latitude = None
 longitude = None
 
+base_path = os.path.dirname(os.path.realpath(__file__))
+dataset_path = os.path.join(base_path,'dataset')
+tmp_path = os.path.join(base_path,'tmp')
 
 # set font
 font1 = QFont('Helvetica', small_text_size)
 font2 = QFont('Helvetica', medium_text_size)
 font3 = QFont('Helvetica', large_text_size) 
+
+recognised_speech = ''
+current_userId =0
+current_userframe = ''
+
 
 
 
@@ -336,7 +347,7 @@ class News(QWidget):
             # print news_req_url
             r = requests.get(news_req_url)
             news_obj = json.loads(r.text)
-            print news_obj
+            #print news_obj
             
             # print news_obj
             
@@ -362,7 +373,7 @@ class News(QWidget):
                 newspaperIcon = QLabel()
                 newspaperIcon.setPixmap(QPixmap.fromImage(image))
 
-                if self.source == 'The New York Times':
+                if self.source == 'the-times-of-india':
                     lbl = QLabel(x)
                     lbl.setWordWrap(True)
                     lbl.setFont(font1)
@@ -409,7 +420,78 @@ class News(QWidget):
 
 
         
+# class for dynamic frame
 
+class DynamicFrame(QWidget):
+    def __init__(self, parent, *args, **kwargs):
+        super(DynamicFrame, self).__init__()
+        self.initUI()
+        self.prev_recorded_speech = ''
+        self.zoom = 15
+        self.map_keys = ["maps","maths"]
+        self.cal_keys = ["calendar","calender"]
+        self.news_keys = ["news","muse","tech","sports","business","india","world","nude"]
+
+    def initUI(self):
+        self.setFixedSize(dynamic_frame_w,dynamic_frame_h)
+        self.vbox = QVBoxLayout()
+        self.setLayout(self.vbox)
+        self.update_check()
+        # self.map = Maps(15)
+        # self.map.setFixedSize(dynamic_frame_w,dynamic_frame_h)
+        # self.vbox.addWidget(self.map)
+        self.news = News('the-times-of-india') 
+        self.news.setFixedSize(dynamic_frame_w,dynamic_frame_h)
+        self.vbox.addWidget(self.news)
+        # self.cal = Calendar(QWidget())
+        # self.cal.setFixedSize(dynamic_frame_w,dynamic_frame_h)
+        # self.vbox.addWidget(self.cal)       
+
+
+    
+    def update_check(self):
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_dynamic_frame)
+        self.timer.start(500)
+
+
+    def update_dynamic_frame(self):
+        global recognised_speech
+        if recognised_speech != self.prev_recorded_speech:
+            
+            print recognised_speech
+            
+            self.prev_recorded_speech = recognised_speech
+
+            if any(x in recognised_speech for x in self.news_keys):
+                print "showing news"
+                for i in reversed(range(self.vbox.count())): 
+                    self.vbox.itemAt(i).widget().setParent(None)
+                
+                if "tech" in recognised_speech:                 
+                    self.news = News('techcrunch')
+
+                elif "business" in recognised_speech or "bizness" in recognised_speech:
+                    self.news = News('business-insider')
+
+                elif "sport" in recognised_speech or "spot" in recognised_speech or "sports" in recognised_speech:
+                    self.news = News('fox-sports')
+
+                elif "world" in recognised_speech or "word" in recognised_speech:
+                    self.news = News('the-telegraph')
+
+                else:
+                    self.news = News('the-times-of-india')                                    
+
+                self.news.setFixedSize(dynamic_frame_w,dynamic_frame_h)
+                self.vbox.addWidget(self.news)
+
+
+
+
+        
+
+		
 
 # class for time
 
@@ -487,29 +569,35 @@ class SmartMirrorWindow:
 
         self.qt.hbox1 = QHBoxLayout()
         self.qt.clock = Clock(QWidget())
+        self.qt.weather = Weather(QWidget())
         self.qt.clock.setFixedHeight(150)
+        self.qt.weather.setFixedHeight(150)
+        self.qt.hbox1.addWidget(self.qt.weather)
+        self.qt.hbox1.addStretch()
         self.qt.hbox1.addWidget(self.qt.clock)
         
 
         # for quotes
 
-        self.qt.hbox2 = QHBoxLayout()
+        self.qt.hbox6= QHBoxLayout()
         self.qt.quotes = Quotes(QWidget())
-        self.qt.hbox2.addWidget(self.qt.quotes)
+        self.qt.hbox6.addWidget(self.qt.quotes)
 
-        # for weather
         
-        self.qt.hbox3 = QHBoxLayout()
-        self.qt.weather = Weather(QWidget())
-       
-        self.qt.hbox3.addWidget(self.qt.weather)
+
+        # Dynamic area
+
+        self.qt.hbox4 = QHBoxLayout()
+        self.qt.Dynamicframe= DynamicFrame(QWidget())
+        self.qt.hbox4.addWidget(self.qt.Dynamicframe)
 
 
         self.qt.vbox = QVBoxLayout()
         self.qt.vbox.addLayout(self.qt.hbox1)
-        self.qt.vbox.addLayout(self.qt.hbox2)
-        self.qt.vbox.addLayout(self.qt.hbox3)
-        
+       
+        self.qt.vbox.addStretch(2)
+        self.qt.vbox.addLayout(self.qt.hbox4)
+        self.qt.vbox.addLayout(self.qt.hbox6)
 
         
 
@@ -520,6 +608,27 @@ class SmartMirrorWindow:
 
 
 
+def start_speech_recording(tmp):
+
+	global recognised_speech
+	BING_KEY = "d31a1f773150423b91fccef15115b61c"
+	while True:
+		r = sr.Recognizer()
+		with sr.Microphone() as source:
+			print("Say Something!")
+			r.adjust_for_ambient_noise(source,duration=1)
+			audio = r.listen(source)
+		try:
+			recognised_speech = r.recognize_bing(audio,key = BING_KEY).lower()
+			print("Microsoft Bing Voice Recognition thinks you said : "+recognised_speech)
+		except sr.UnknownValueError:
+			print("Microsoft Bing Voice Recognition could not understand audio")
+		except sr.RequestError as e :
+			print("Could not request results from Microsoft Bing Voice Recognition service; {0}".format(e))
+
+
+
+  
 def start_qt(tmp):
     a = QApplication(sys.argv)
     w = SmartMirrorWindow(a)
@@ -533,6 +642,8 @@ if __name__ == '__main__':
     try:
 
         thread.start_new_thread(start_qt,(1,))
+        thread.start_new_thread(start_speech_recording,(2, ))
+
 
 
     except Exception as e:
